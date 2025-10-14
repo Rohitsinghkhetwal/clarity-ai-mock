@@ -1,10 +1,34 @@
 import { Button } from "@/components/ui/button";
+import axios from "axios";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate()
+
+
+  const isLoggedIn = localStorage.getItem('token')
+  const user = localStorage.getItem('user')
+  const user_image = JSON.parse(user)
+
+
+  const logout =  () => {
+    try {
+      localStorage.removeItem('token')
+      localStorage.removeItem("user")
+      navigate('/signin')
+
+
+    }catch(err) {
+      console.log("Something went wrong while logging out ")
+    }
+  }
+
+
+  // console.log("is loggedn", isLoggedIn)
 
   return (
     <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-lg border-b border-border z-50">
@@ -34,12 +58,26 @@ const Navbar = () => {
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
-            <Link to="/signin">
+            {isLoggedIn ? (
+              <img src={user_image?.avatar} alt="image" className="h-[2.5rem] w-[2.5rem] rounded-full" />
+            ): (
+              <Link to="/signin">
               <Button variant="ghost">Sign In</Button>
             </Link>
-            <Link to="/signup">
+
+            )}
+            
+            <Link to={isLoggedIn ? '/interview' : 'signin'}>
               <Button variant="hero">Get Started</Button>
             </Link>
+
+            {
+              isLoggedIn && (
+                <div className="text-gray-700 pl-12 cursor-pointer rounded-md" onClick={logout}>
+                  Logout
+                </div>
+              )
+            }
           </div>
 
           {/* Mobile menu button */}

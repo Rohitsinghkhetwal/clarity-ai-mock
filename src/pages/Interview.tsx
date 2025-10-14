@@ -3,14 +3,202 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Camera, Mic, Pause, Square, SkipForward, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { io, Socket } from "socket.io-client";
+import axios from "axios";
+import { useLocation } from "react-router-dom";
 
 const Interview = () => {
+  const location = useLocation();
+  const { role, company } = location.state || {};
+
+  const [isPlaying, setIsPlaying] = useState(false);
+const audioRef = useRef<HTMLAudioElement>(null);
+
   const [isRecording, setIsRecording] = useState(false);
   const [confidence] = useState(75);
   const [fillerWords] = useState(3);
   const [progress] = useState(40);
+
+  const socketRef = useRef<Socket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [transcription, setTransscription] = useState("");
+  const [InterviewData, setInterviewData] = useState(null);
+  const [questionReady, setQuestionReady] = useState(null);
+
+
+  const userIdData = localStorage.getItem("user");
+  const userId = JSON.parse(userIdData);
+
+
+  const playAudio = () => {
+  if (audioRef.current) {
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  }
+};
+
+
+
+
+  useEffect(() => {
+    socketRef.current = io("http://localhost:8000", {
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ["websocket", "polling"],
+    });
+
+    const socket = socketRef.current;
+
+    socket.on("connection", () => {
+      console.log("Socket connected");
+      setIsConnected(true);
+    });
+
+    // socket.emit("join-interview", {
+    //   userId: "jdfsdfj",
+    // });
+
+    socket.on('recording-started', () => {
+      console.log("Recording started ===")
+
+    })
+
+    socket.on("disconnect", () => {
+      console.log("Socket disconnected");
+      setIsConnected(false);
+      // setInterviewStatus('Disconnected');
+    });
+
+    socket.on("question-ready", (data) => {
+      console.log("this is the data", data);
+      setQuestionReady(data);
+    });
+
+    socket.on("interview-ended", (data) => {
+      console.log("Interview ended:", data);
+      // setInterviewStatus('Interview Ended');
+    });
+
+    socket.on("interview-completed", (data) => {
+      console.log("this is the data", data);
+    });
+
+    socket.on('transcription-update', (data) => {
+      console.log("Transcription update", data)
+    })
+
+    socket.on('interview-completed', (data) => {
+      console.log("interview completed", data)
+    })
+
+    return () => {
+      if (socket) {
+        socket.off("connection");
+        socket.off("join-interview");
+
+        socket.disconnect();
+      }
+    };
+  }, []);
+
+  const handleStartInterview = async () => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/interview/start`,
+        {
+          company,
+          role,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      const result = response.data;
+      setInterviewData(result);
+      
+      console.log("Result", result);
+      if (socketRef.current) {
+        socketRef.current.emit("join-interview", {
+          sessionId: result.session.id,
+          userId: userId.id,
+        });
+      }
+    } catch (err) {
+      console.log("Something went wrong while starting interview", err);
+    }
+  };
+
+  useEffect(() => {
+    if(!InterviewData?.session?.id) {
+      handleStartInterview();
+    } 
+  }, []);
+
+  //bug in the function
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      streamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(!isRecording)
+
+      mediaRecorder.ondataavailable = (event) => {
+        console.log("this is event .data size", event.data.size)
+        if (event.data.size > 0) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            socketRef.current.emit('audio-chunk', {
+              audioData: reader.result,
+              sessionId:InterviewData.session.id
+            });
+            socketRef.current.emit('start-recording', {
+              sessionId:InterviewData.session.id
+            })
+          };
+
+          reader.readAsArrayBuffer(event.data);
+        }
+      };
+    }catch(err) {
+      console.log("Something went wrong", err);
+    }
+  }
+
+  const handleNextFunction = async () => {
+    socketRef.current.emit('skip-question', {
+      sessionId: InterviewData.session.id 
+    })
+
+  }
+
+  // fetch the sessionId when the user press the next question
+
+  //fetch the session id from the backend
+  // pass it to backend
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5">
@@ -26,7 +214,8 @@ const Interview = () => {
             </Link>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-sm">
-                Question 2 of 5
+                Question {questionReady?.questionNumber} of{" "}
+                {questionReady?.totalQuestions}
               </Badge>
               <Link to="/dashboard">
                 <Button variant="outline" size="sm">
@@ -56,10 +245,18 @@ const Interview = () => {
                     </Badge>
                   </div>
                   <div className="absolute bottom-4 right-4 flex gap-2">
-                    <Button size="icon" variant="secondary" className="rounded-full">
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="rounded-full"
+                    >
                       <Mic className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" variant="secondary" className="rounded-full">
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="rounded-full"
+                    >
                       <Camera className="h-4 w-4" />
                     </Button>
                   </div>
@@ -72,14 +269,18 @@ const Interview = () => {
               <CardContent className="pt-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-bold">Current Question</h2>
-                  <Button variant="ghost" size="sm">
+                  <audio
+                    ref={audioRef}
+                    src={questionReady?.question.audioUrl}
+                    onEnded={() => setIsPlaying(false)}
+                  />
+                  <Button variant="ghost" size="sm" onClick={playAudio}>
                     <Volume2 className="h-4 w-4 mr-2" />
                     Repeat
                   </Button>
                 </div>
                 <p className="text-lg text-muted-foreground">
-                  "Tell me about a time when you had to work under pressure. How did you handle it, 
-                  and what was the outcome?"
+                  {questionReady?.question?.questionText}
                 </p>
                 <Progress value={progress} className="h-2" />
                 <p className="text-sm text-muted-foreground">
@@ -93,7 +294,7 @@ const Interview = () => {
               <Button
                 variant={isRecording ? "secondary" : "hero"}
                 size="lg"
-                onClick={() => setIsRecording(!isRecording)}
+                onClick={startRecording}
               >
                 {isRecording ? (
                   <>
@@ -107,7 +308,7 @@ const Interview = () => {
                   </>
                 )}
               </Button>
-              <Button variant="outline" size="lg">
+              <Button variant="outline" size="lg" onClick={handleNextFunction}>
                 <SkipForward className="h-5 w-5 mr-2" />
                 Next Question
               </Button>
@@ -166,8 +367,12 @@ const Interview = () => {
               <CardContent className="pt-6 space-y-4">
                 <h3 className="font-semibold">Filler Words Detected</h3>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-primary mb-2">{fillerWords}</div>
-                  <p className="text-sm text-muted-foreground">Total count this session</p>
+                  <div className="text-4xl font-bold text-primary mb-2">
+                    {fillerWords}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Total count this session
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -187,8 +392,12 @@ const Interview = () => {
               <CardContent className="pt-6 space-y-4">
                 <h3 className="font-semibold">Speech Pace</h3>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-primary mb-2">145</div>
-                  <p className="text-sm text-muted-foreground">words per minute</p>
+                  <div className="text-3xl font-bold text-primary mb-2">
+                    145
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    words per minute
+                  </p>
                 </div>
                 <Badge variant="secondary" className="w-full justify-center">
                   Optimal Range: 140-160 WPM

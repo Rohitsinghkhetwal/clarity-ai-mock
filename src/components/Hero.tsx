@@ -2,8 +2,16 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import heroImage from "@/assets/hero-ai.jpg";
+import InterviewModal from "./Modal";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const Hero = () => {
+
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false)
+
+  const isLoggedIn = localStorage.getItem('token')
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-background via-primary/5 to-accent/5">
       {/* Animated background elements */}
@@ -31,15 +39,16 @@ const Hero = () => {
             <p className="text-xl text-muted-foreground">
               Practice interviews with AI, analyze your responses, and improve faster. 
               Get instant feedback on your communication, confidence, and interview skills.
-            </p>
+            </p> 
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link to="/interview">
-                <Button variant="hero" size="lg" className="w-full sm:w-auto group">
+              {/* <Link to="/interview"> */}
+                <Button variant="hero" size="lg" className="w-full sm:w-auto group" onClick={() => isLoggedIn ? setOpen(true) : navigate("/signin")}>
                   Start Practicing
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
-              </Link>
+                <InterviewModal open={open} onClose={() => setOpen(false)} onStart={() => console.log("hi there ")}/>
+              {/* </Link> */}
               <Button variant="outline" size="lg" className="w-full sm:w-auto group">
                 <Play className="mr-2 h-5 w-5" />
                 See How It Works
