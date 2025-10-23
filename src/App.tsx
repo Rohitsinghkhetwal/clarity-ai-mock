@@ -10,6 +10,8 @@ import SignIn from "./pages/SignIn";
 import Interview from "./pages/Interview";
 import Dashboard from "./pages/Dashboard";
 import AuthCallback from "./pages/Authcallback"
+import { FeatureShowcase } from "./components/Appfeatures";
+import Navbar from "./components/Navbar";
 
 const queryClient = new QueryClient();
 
@@ -18,12 +20,15 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      
       <BrowserRouter>
+      <Navbar />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/interview" element={<Interview />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/features" element={<FeatureShowcase/>}/>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
           <Route path="/auth/callback" element={<AuthCallback />} />

@@ -4,17 +4,20 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Camera, Mic, Pause, Square, SkipForward, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
+import useStore from "@/Store/Store";
 
 const Interview = () => {
   const location = useLocation();
+  const { setCompletionData } = useStore();
+  const navigate = useNavigate();
   const { role, company } = location.state || {};
 
   const [isPlaying, setIsPlaying] = useState(false);
-const audioRef = useRef<HTMLAudioElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [confidence] = useState(75);
@@ -25,29 +28,44 @@ const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [transcription, setTransscription] = useState("");
-  const [InterviewData, setInterviewData] = useState(null);
-  const [questionReady, setQuestionReady] = useState(null);
-
+  const [transcription, setTranscription] = useState("");
+  const [InterviewData, setInterviewData] = useState<any>(null);
+  const [questionReady, setQuestionReady] = useState<any>(null);
 
   const userIdData = localStorage.getItem("user");
-  const userId = JSON.parse(userIdData);
+  const userId = JSON.parse(userIdData || "{}");
 
-
-  const playAudio = () => {
-  if (audioRef.current) {
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+  const playAudio = async () => {
+    console.log("Playing audio");
+    if (audioRef.current) {
+      try {
+        if (isPlaying) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          if (audioRef.current.readyState < 2) {
+            audioRef.current.load();
+          }
+          await audioRef.current.play();
+          setIsPlaying(true);
+        }
+      } catch (error: any) {
+        console.error("Audio playback error:", error);
+        if (error.name === "AbortError") {
+          try {
+            audioRef.current.load();
+            await audioRef.current.play();
+            setIsPlaying(true);
+          } catch (retryError) {
+            console.error("Retry failed:", retryError);
+            setIsPlaying(false);
+          }
+        } else {
+          setIsPlaying(false);
+        }
+      }
     }
-  }
-};
-
-
-
+  };
 
   useEffect(() => {
     socketRef.current = io("http://localhost:8000", {
@@ -60,57 +78,93 @@ const audioRef = useRef<HTMLAudioElement>(null);
 
     const socket = socketRef.current;
 
-    socket.on("connection", () => {
-      console.log("Socket connected");
+    socket.on("connect", () => {
+      console.log("Socket connected:", socket.id);
       setIsConnected(true);
     });
-
-    // socket.emit("join-interview", {
-    //   userId: "jdfsdfj",
-    // });
-
-    socket.on('recording-started', () => {
-      console.log("Recording started ===")
-
-    })
 
     socket.on("disconnect", () => {
       console.log("Socket disconnected");
       setIsConnected(false);
-      // setInterviewStatus('Disconnected');
+    });
+
+    socket.on("recording-started", () => {
+      console.log("Recording started from server");
     });
 
     socket.on("question-ready", (data) => {
-      console.log("this is the data", data);
+      console.log("Question ready:", data);
       setQuestionReady(data);
     });
 
     socket.on("interview-ended", (data) => {
       console.log("Interview ended:", data);
-      // setInterviewStatus('Interview Ended');
     });
 
     socket.on("interview-completed", (data) => {
-      console.log("this is the data", data);
+      console.log("Interview completed:", data);
+      setCompletionData(data);
     });
 
-    socket.on('transcription-update', (data) => {
-      console.log("Transcription update", data)
-    })
+    // Handle all possible transcription event names
+    socket.on("transcription", (data) => {
+      console.log("Transcription received:", data);
+      handleTranscriptionUpdate(data);
+    });
 
-    socket.on('interview-completed', (data) => {
-      console.log("interview completed", data)
-    })
+    socket.on("transcription-update", (data) => {
+      console.log("Transcription update:", data);
+      handleTranscriptionUpdate(data);
+    });
+
+    socket.on("transcript", (data) => {
+      console.log("Transcript:", data);
+      handleTranscriptionUpdate(data);
+    });
+
+    socket.on("error", (data) => {
+      console.error("Socket error:", data);
+    });
 
     return () => {
       if (socket) {
-        socket.off("connection");
-        socket.off("join-interview");
-
+        socket.off("connect");
+        socket.off("disconnect");
+        socket.off("recording-started");
+        socket.off("question-ready");
+        socket.off("interview-ended");
+        socket.off("interview-completed");
+        socket.off("transcription");
+        socket.off("transcription-update");
+        socket.off("transcript");
+        socket.off("error");
         socket.disconnect();
       }
     };
   }, []);
+
+  // Handle transcription updates
+  const handleTranscriptionUpdate = (data: any) => {
+    let text = "";
+
+    if (typeof data === "string") {
+      text = data;
+    } else if (data?.text) {
+      text = data.text;
+    } else if (data?.transcript) {
+      text = data.transcript;
+    } else if (data?.results) {
+      // AWS Transcribe format
+      const transcripts = data.results.transcripts;
+      if (transcripts && transcripts.length > 0) {
+        text = transcripts[0].transcript;
+      }
+    }
+
+    if (text) {
+      setTranscription((prev) => (prev ? `${prev} ${text}` : text));
+    }
+  };
 
   const handleStartInterview = async () => {
     try {
@@ -130,8 +184,9 @@ const audioRef = useRef<HTMLAudioElement>(null);
       );
       const result = response.data;
       setInterviewData(result);
-      
-      console.log("Result", result);
+
+      console.log("Interview started:", result);
+
       if (socketRef.current) {
         socketRef.current.emit("join-interview", {
           sessionId: result.session.id,
@@ -139,66 +194,243 @@ const audioRef = useRef<HTMLAudioElement>(null);
         });
       }
     } catch (err) {
-      console.log("Something went wrong while starting interview", err);
+      console.error("Failed to start interview:", err);
+      alert("Failed to start interview. Please try again.");
     }
   };
 
   useEffect(() => {
-    if(!InterviewData?.session?.id) {
+    if (!InterviewData?.session?.id) {
       handleStartInterview();
-    } 
+    }
   }, []);
 
-  //bug in the function
+  // SIMPLE RECORDING WITH MediaRecorder
+  // const startRecording = async () => {
+  //   try {
+  //     if (!InterviewData?.session?.id) {
+  //       console.warn("Session not ready yet");
+  //       alert("Session not ready yet. Please wait...");
+  //       return;
+  //     }
 
-  const startRecording = async () => {
+  //     // If already recording, pause
+  //     if (isRecording && mediaRecorderRef.current) {
+  //       mediaRecorderRef.current.pause();
+  //       setIsRecording(false);
+  //       socketRef.current?.emit("pause-recording", {
+  //         sessionId: InterviewData.session.id,
+  //       });
+  //       return;
+  //     }
+
+  //     // If paused, resume
+  //     if (!isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+  //       mediaRecorderRef.current.resume();
+  //       setIsRecording(true);
+  //       socketRef.current?.emit("resume-recording", {
+  //         sessionId: InterviewData.session.id,
+  //       });
+  //       return;
+  //     }
+
+  //     // Get microphone stream
+  //     const stream = await navigator.mediaDevices.getUserMedia({
+  //       audio: {
+  //         echoCancellation: true,
+  //         noiseSuppression: true,
+  //         autoGainControl: true,
+  //       },
+  //     });
+
+  //     streamRef.current = stream;
+
+  //     // Create MediaRecorder with webm format (works well with AWS Transcribe)
+  //     const mediaRecorder = new MediaRecorder(stream, {
+  //       mimeType: 'audio/webm;codecs=opus',
+  //     });
+
+  //     mediaRecorderRef.current = mediaRecorder;
+
+  //     // Send audio chunks to backend
+  //     mediaRecorder.ondataavailable = (event) => {
+  //       if (event.data.size > 0) {
+  //         console.log("Audio chunk size:", event.data.size);
+
+  //         // Send as blob to backend
+  //         socketRef.current?.emit("audio-chunk", {
+  //           audioData: event.data,
+  //           sessionId: InterviewData.session.id,
+  //         });
+  //       }
+  //     };
+
+  //     mediaRecorder.onstart = () => {
+  //       console.log("MediaRecorder started");
+  //       setIsRecording(true);
+  //     };
+
+  //     mediaRecorder.onstop = () => {
+  //       console.log("MediaRecorder stopped");
+  //       setIsRecording(false);
+  //     };
+
+  //     mediaRecorder.onerror = (event) => {
+  //       console.error("MediaRecorder error:", event);
+  //       setIsRecording(false);
+  //     };
+
+  //     // Start recording (send chunks every 250ms for real-time transcription)
+  //     mediaRecorder.start(250);
+
+  //     // Emit start-recording event
+  //     socketRef.current?.emit("start-recording", {
+  //       sessionId: InterviewData.session.id,
+  //       format: "webm",
+  //       codec: "opus",
+  //     });
+
+  //     console.log("Recording started");
+
+  //   } catch (err: any) {
+  //     console.error("Recording error:", err);
+
+  //     if (err.name === "NotAllowedError") {
+  //       alert("Please allow microphone access to record audio");
+  //     } else if (err.name === "NotFoundError") {
+  //       alert("No microphone found. Please connect a microphone.");
+  //     } else {
+  //       alert("Failed to start recording: " + err.message);
+  //     }
+
+  //     setIsRecording(false);
+  //   }
+  // };
+
+  async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
-        }
+          autoGainControl: true,
+        },
       });
 
-      streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(!isRecording)
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)({
+        sampleRate: 16000, // AWS expects 16kHz
+      });
 
-      mediaRecorder.ondataavailable = (event) => {
-        console.log("this is event .data size", event.data.size)
-        if (event.data.size > 0) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            socketRef.current.emit('audio-chunk', {
-              audioData: reader.result,
-              sessionId:InterviewData.session.id
-            });
-            socketRef.current.emit('start-recording', {
-              sessionId:InterviewData.session.id
-            })
-          };
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-          reader.readAsArrayBuffer(event.data);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (e: any) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const buffer = new ArrayBuffer(input.length * 2);
+        const view = new DataView(buffer);
+
+        for (let i = 0; i < input.length; i++) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
         }
+
+        // Send raw PCM16 audio to backend
+        socketRef.current?.emit("audio-chunk", {
+          audioData: buffer,
+          sessionId: InterviewData.session.id,
+        });
       };
-    }catch(err) {
-      console.log("Something went wrong", err);
+
+      // Notify backend we're starting transcription
+      socketRef.current?.emit("start-recording", {
+        sessionId: InterviewData.session.id,
+        sampleRate: 16000,
+      });
+
+      setIsRecording(true);
+      console.log("🎙️ Started streaming PCM audio to backend");
+    } catch (err) {
+      console.error("Microphone error:", err);
     }
   }
 
+  const stopRecording = () => {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      mediaRecorderRef.current.stop();
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        console.log("Track stopped:", track.kind);
+      });
+      streamRef.current = null;
+    }
+
+    setIsRecording(false);
+
+    socketRef.current?.emit("stop-recording", {
+      sessionId: InterviewData.session.id,
+    });
+  };
+
   const handleNextFunction = async () => {
-    socketRef.current.emit('skip-question', {
-      sessionId: InterviewData.session.id 
-    })
+    // Clear transcription for next question
+    setTranscription("");
 
-  }
+    // Stop current recording
+    stopRecording();
 
-  // fetch the sessionId when the user press the next question
+    socketRef.current?.emit("skip-question", {
+      sessionId: InterviewData.session.id,
+    });
+  };
 
-  //fetch the session id from the backend
-  // pass it to backend
+  const endInterView = async () => {
+    try {
+      // Stop recording
+      stopRecording();
+
+      // Emit end-interview event
+      socketRef.current?.emit("end-interview", {
+        sessionId: InterviewData.session.id,
+      });
+
+      // Small delay to ensure event is sent
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Disconnect socket
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    } catch (error) {
+      console.error("Error ending interview:", error);
+    } finally {
+      navigate("/dashboard");
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5">
@@ -213,15 +445,19 @@ const audioRef = useRef<HTMLAudioElement>(null);
               <span className="font-bold text-xl">InterviewPro</span>
             </Link>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-sm">
-                Question {questionReady?.questionNumber} of{" "}
-                {questionReady?.totalQuestions}
+              <Badge
+                variant={isConnected ? "secondary" : "destructive"}
+                className="text-sm"
+              >
+                {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
               </Badge>
-              <Link to="/dashboard">
-                <Button variant="outline" size="sm">
-                  End Interview
-                </Button>
-              </Link>
+              <Badge variant="secondary" className="text-sm">
+                Question {questionReady?.questionNumber || 1} of{" "}
+                {questionReady?.totalQuestions || "?"}
+              </Badge>
+              <Button variant="outline" size="sm" onClick={endInterView}>
+                End Interview
+              </Button>
             </div>
           </div>
         </div>
@@ -232,18 +468,20 @@ const audioRef = useRef<HTMLAudioElement>(null);
           {/* Main Interview Area */}
           <div className="lg:col-span-2 space-y-6">
             {/* Video Feed */}
-            <Card className="overflow-hidden shadow-card border-primary/10">
+            {/* <Card className="overflow-hidden shadow-card border-primary/10 bg-red-300">
               <CardContent className="p-0">
                 <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
                   <div className="absolute inset-0 flex items-center justify-center">
                     <Camera className="h-24 w-24 text-primary/40" />
                   </div>
-                  <div className="absolute top-4 left-4">
-                    <Badge variant="destructive" className="animate-pulse-glow">
-                      <div className="w-2 h-2 bg-white rounded-full mr-2" />
-                      Recording
-                    </Badge>
-                  </div>
+                  {isRecording && (
+                    <div className="absolute top-4 left-4">
+                      <Badge variant="destructive" className="animate-pulse-glow">
+                        <div className="w-2 h-2 bg-white rounded-full mr-2" />
+                        Recording
+                      </Badge>
+                    </div>
+                  )}
                   <div className="absolute bottom-4 right-4 flex gap-2">
                     <Button
                       size="icon"
@@ -262,6 +500,49 @@ const audioRef = useRef<HTMLAudioElement>(null);
                   </div>
                 </div>
               </CardContent>
+            </Card> */}
+
+            <Card className="overflow-hidden shadow-card border-primary/10">
+              <CardContent className="p-0">
+                <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/20">
+                  <div className="absolute inset-0 overflow-y-auto p-6">
+                    <div className="text-primary/90 whitespace-pre-wrap">
+                      {transcription || (
+                        <div className="flex items-center justify-center h-full text-primary/40">
+                          Transcription will appear here...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {isRecording && (
+                    <div className="absolute top-4 left-4">
+                      <Badge
+                        variant="destructive"
+                        className="animate-pulse-glow"
+                      >
+                        <div className="w-2 h-2 bg-white rounded-full mr-2" />
+                        Recording
+                      </Badge>
+                    </div>
+                  )}
+                  {/* <div className="absolute bottom-4 right-4 flex gap-2">
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="rounded-full"
+                    >
+                      <Mic className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="rounded-full"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </Button>
+                  </div> */}
+                </div>
+              </CardContent>
             </Card>
 
             {/* Question Card */}
@@ -271,16 +552,26 @@ const audioRef = useRef<HTMLAudioElement>(null);
                   <h2 className="text-2xl font-bold">Current Question</h2>
                   <audio
                     ref={audioRef}
-                    src={questionReady?.question.audioUrl}
+                    src={questionReady?.question?.audioUrl}
                     onEnded={() => setIsPlaying(false)}
+                    onError={(e) => {
+                      console.error("Audio error:", e);
+                      setIsPlaying(false);
+                    }}
                   />
-                  <Button variant="ghost" size="sm" onClick={playAudio}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={playAudio}
+                    disabled={!questionReady?.question?.audioUrl}
+                  >
                     <Volume2 className="h-4 w-4 mr-2" />
-                    Repeat
+                    {isPlaying ? "Playing..." : "Repeat"}
                   </Button>
                 </div>
                 <p className="text-lg text-muted-foreground">
-                  {questionReady?.question?.questionText}
+                  {questionReady?.question?.questionText ||
+                    "Loading question..."}
                 </p>
                 <Progress value={progress} className="h-2" />
                 <p className="text-sm text-muted-foreground">
@@ -295,6 +586,7 @@ const audioRef = useRef<HTMLAudioElement>(null);
                 variant={isRecording ? "secondary" : "hero"}
                 size="lg"
                 onClick={startRecording}
+                disabled={!InterviewData?.session?.id}
               >
                 {isRecording ? (
                   <>
@@ -308,11 +600,16 @@ const audioRef = useRef<HTMLAudioElement>(null);
                   </>
                 )}
               </Button>
-              <Button variant="outline" size="lg" onClick={handleNextFunction}>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleNextFunction}
+                disabled={!InterviewData?.session?.id}
+              >
                 <SkipForward className="h-5 w-5 mr-2" />
                 Next Question
               </Button>
-              <Button variant="destructive" size="lg">
+              <Button variant="destructive" size="lg" onClick={endInterView}>
                 <Square className="h-5 w-5 mr-2" />
                 End
               </Button>
@@ -322,16 +619,31 @@ const audioRef = useRef<HTMLAudioElement>(null);
           {/* Real-time Feedback Sidebar */}
           <div className="space-y-6">
             {/* Transcription */}
-            <Card className="shadow-card border-primary/10">
+            {/* <Card className="shadow-card border-primary/10">
               <CardContent className="pt-6 space-y-4">
-                <h3 className="font-semibold text-lg">Live Transcription</h3>
+                <h3 className="font-semibold text-lg flex items-center justify-between">
+                  Live Transcription
+                  {isRecording && (
+                    <Badge variant="secondary" className="animate-pulse">
+                      Listening...
+                    </Badge>
+                  )}
+                </h3>
                 <div className="bg-secondary/30 rounded-lg p-4 min-h-[120px] max-h-[200px] overflow-y-auto">
-                  <p className="text-sm text-muted-foreground italic">
-                    Your speech will appear here in real-time...
-                  </p>
+                  {transcription ? (
+                    <p className="text-sm text-foreground whitespace-pre-wrap">
+                      {transcription}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      {isRecording
+                        ? "Start speaking... Your speech will appear here in real-time"
+                        : "Your speech will appear here in real-time"}
+                    </p>
+                  )}
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* Confidence Meter */}
             <Card className="shadow-card border-primary/10">
