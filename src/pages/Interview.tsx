@@ -29,43 +29,82 @@ const Interview = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [transcription, setTranscription] = useState("");
+  console.log("transcription is here ===> ", transcription)
   const [InterviewData, setInterviewData] = useState<any>(null);
+  console.log("this is the Interview data ", InterviewData)
+
+  // console.log("INTERVIEW DATA ", InterviewData?.session?.currentQuestion);
   const [questionReady, setQuestionReady] = useState<any>(null);
+  const [currentquestionIndex , setcurrentquestionIndex] = useState(0)
+
+  const totalQuestion = questionReady?.totalQuestions
+
+
+  const progressBar = ((currentquestionIndex + 1) / totalQuestion) * 100
+
+  // console.log("question ", questionReady?.question?.questionText);
+
+  console.log("transcription here ==> ")
 
   const userIdData = localStorage.getItem("user");
   const userId = JSON.parse(userIdData || "{}");
 
-  const playAudio = async () => {
-    console.log("Playing audio");
-    if (audioRef.current) {
-      try {
-        if (isPlaying) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        } else {
-          if (audioRef.current.readyState < 2) {
-            audioRef.current.load();
-          }
-          await audioRef.current.play();
-          setIsPlaying(true);
-        }
-      } catch (error: any) {
-        console.error("Audio playback error:", error);
-        if (error.name === "AbortError") {
-          try {
-            audioRef.current.load();
-            await audioRef.current.play();
-            setIsPlaying(true);
-          } catch (retryError) {
-            console.error("Retry failed:", retryError);
-            setIsPlaying(false);
-          }
-        } else {
-          setIsPlaying(false);
-        }
-      }
+  // const playAudio = async () => {
+  //   console.log("Playing audio");
+  //   if (audioRef.current) {
+  //     try {
+  //       if (isPlaying) {
+  //         audioRef.current.pause();
+  //         setIsPlaying(false);
+  //       } else {
+  //         if (audioRef.current.readyState < 2) {
+  //           audioRef.current.load();
+  //         }
+  //         await audioRef.current.play();
+  //         setIsPlaying(true);
+  //       }
+  //     } catch (error: any) {
+  //       console.error("Audio playback error:", error);
+  //       if (error.name === "AbortError") {
+  //         try {
+  //           audioRef.current.load();
+  //           await audioRef.current.play();
+  //           setIsPlaying(true);
+  //         } catch (retryError) {
+  //           console.error("Retry failed:", retryError);
+  //           setIsPlaying(false);
+  //         }
+  //       } else {
+  //         setIsPlaying(false);
+  //       }
+  //     }
+  //   }
+  // };
+
+  const speakText = (text: any) => {
+    console.log("clicked  ____")
+    if (!("speechSynthesis" in window)) {
+      alert("Speech faild !");
+      return;
     }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 1;
+    utterance.pitch = 1; 
+    utterance.volume = 1;
+
+    window.speechSynthesis.speak(utterance)
   };
+
+  // speech when interview started 
+
+  useEffect(() => {
+    speakText(questionReady?.question?.questionText)
+
+  },[questionReady])
 
   useEffect(() => {
     socketRef.current = io("http://localhost:8000", {
@@ -205,108 +244,7 @@ const Interview = () => {
     }
   }, []);
 
-  // SIMPLE RECORDING WITH MediaRecorder
-  // const startRecording = async () => {
-  //   try {
-  //     if (!InterviewData?.session?.id) {
-  //       console.warn("Session not ready yet");
-  //       alert("Session not ready yet. Please wait...");
-  //       return;
-  //     }
-
-  //     // If already recording, pause
-  //     if (isRecording && mediaRecorderRef.current) {
-  //       mediaRecorderRef.current.pause();
-  //       setIsRecording(false);
-  //       socketRef.current?.emit("pause-recording", {
-  //         sessionId: InterviewData.session.id,
-  //       });
-  //       return;
-  //     }
-
-  //     // If paused, resume
-  //     if (!isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
-  //       mediaRecorderRef.current.resume();
-  //       setIsRecording(true);
-  //       socketRef.current?.emit("resume-recording", {
-  //         sessionId: InterviewData.session.id,
-  //       });
-  //       return;
-  //     }
-
-  //     // Get microphone stream
-  //     const stream = await navigator.mediaDevices.getUserMedia({
-  //       audio: {
-  //         echoCancellation: true,
-  //         noiseSuppression: true,
-  //         autoGainControl: true,
-  //       },
-  //     });
-
-  //     streamRef.current = stream;
-
-  //     // Create MediaRecorder with webm format (works well with AWS Transcribe)
-  //     const mediaRecorder = new MediaRecorder(stream, {
-  //       mimeType: 'audio/webm;codecs=opus',
-  //     });
-
-  //     mediaRecorderRef.current = mediaRecorder;
-
-  //     // Send audio chunks to backend
-  //     mediaRecorder.ondataavailable = (event) => {
-  //       if (event.data.size > 0) {
-  //         console.log("Audio chunk size:", event.data.size);
-
-  //         // Send as blob to backend
-  //         socketRef.current?.emit("audio-chunk", {
-  //           audioData: event.data,
-  //           sessionId: InterviewData.session.id,
-  //         });
-  //       }
-  //     };
-
-  //     mediaRecorder.onstart = () => {
-  //       console.log("MediaRecorder started");
-  //       setIsRecording(true);
-  //     };
-
-  //     mediaRecorder.onstop = () => {
-  //       console.log("MediaRecorder stopped");
-  //       setIsRecording(false);
-  //     };
-
-  //     mediaRecorder.onerror = (event) => {
-  //       console.error("MediaRecorder error:", event);
-  //       setIsRecording(false);
-  //     };
-
-  //     // Start recording (send chunks every 250ms for real-time transcription)
-  //     mediaRecorder.start(250);
-
-  //     // Emit start-recording event
-  //     socketRef.current?.emit("start-recording", {
-  //       sessionId: InterviewData.session.id,
-  //       format: "webm",
-  //       codec: "opus",
-  //     });
-
-  //     console.log("Recording started");
-
-  //   } catch (err: any) {
-  //     console.error("Recording error:", err);
-
-  //     if (err.name === "NotAllowedError") {
-  //       alert("Please allow microphone access to record audio");
-  //     } else if (err.name === "NotFoundError") {
-  //       alert("No microphone found. Please connect a microphone.");
-  //     } else {
-  //       alert("Failed to start recording: " + err.message);
-  //     }
-
-  //     setIsRecording(false);
-  //   }
-  // };
-
+ 
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -383,6 +321,9 @@ const Interview = () => {
 
   const handleNextFunction = async () => {
     // Clear transcription for next question
+    if(currentquestionIndex < totalQuestion - 1) {
+      setcurrentquestionIndex(prev => prev + 1)
+    }
     setTranscription("");
 
     // Stop current recording
@@ -432,6 +373,32 @@ const Interview = () => {
     };
   }, []);
 
+  //fetching the api in the app for the submitting the answer and calling the api
+
+  //when we will complete the interview so we will call the complete interview api and 
+  
+  const submitAnswer = async() => {
+    try {
+      const token = localStorage.getItem('token')
+      const sessionId = InterviewData?.session?.id
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/interview/${sessionId}/answer`, {
+        answer: transcription
+      },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+    console.log("RESPONSE ", response)
+
+    }catch(err) {
+      console.error("Failed to submit answer")
+      alert("Failed to submit answer:")
+
+    }
+
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5">
       {/* Header */}
@@ -455,7 +422,7 @@ const Interview = () => {
                 Question {questionReady?.questionNumber || 1} of{" "}
                 {questionReady?.totalQuestions || "?"}
               </Badge>
-              <Button variant="outline" size="sm" onClick={endInterView}>
+              <Button variant="destructive" size="sm" onClick={endInterView}>
                 End Interview
               </Button>
             </div>
@@ -560,10 +527,10 @@ const Interview = () => {
                     }}
                   />
                   <Button
-                    variant="ghost"
+                    variant="accent"
                     size="sm"
-                    onClick={playAudio}
-                    disabled={!questionReady?.question?.audioUrl}
+                    onClick={() => speakText(questionReady?.question?.questionText)}
+                    
                   >
                     <Volume2 className="h-4 w-4 mr-2" />
                     {isPlaying ? "Playing..." : "Repeat"}
@@ -573,7 +540,7 @@ const Interview = () => {
                   {questionReady?.question?.questionText ||
                     "Loading question..."}
                 </p>
-                <Progress value={progress} className="h-2" />
+                <Progress value={progressBar} className="h-2" />
                 <p className="text-sm text-muted-foreground">
                   Time remaining: {Math.floor((5 - progress / 20) * 60)} seconds
                 </p>
@@ -600,6 +567,12 @@ const Interview = () => {
                   </>
                 )}
               </Button>
+              <Button variant="outline" size="lg" onClick={submitAnswer}>
+                Submit Answer
+
+              </Button>
+
+              {/* We have to disable this button when all the question will be completed and mark as done */}
               <Button
                 variant="outline"
                 size="lg"
@@ -609,11 +582,17 @@ const Interview = () => {
                 <SkipForward className="h-5 w-5 mr-2" />
                 Next Question
               </Button>
+             
+            </div>
+            {/* <div className=" flex items-center justify-center">
               <Button variant="destructive" size="lg" onClick={endInterView}>
                 <Square className="h-5 w-5 mr-2" />
                 End
               </Button>
-            </div>
+
+            </div> */}
+
+             
           </div>
 
           {/* Real-time Feedback Sidebar */}
