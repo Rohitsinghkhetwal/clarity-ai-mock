@@ -20,8 +20,8 @@ const Interview = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const [isRecording, setIsRecording] = useState(false);
-  const [confidence] = useState(75);
-  const [fillerWords] = useState(3);
+  const [confidence] = useState("Analizing");
+  const [fillerWords] = useState("Analizing...");
   const [progress] = useState(40);
 
   const socketRef = useRef<Socket | null>(null);
@@ -29,22 +29,21 @@ const Interview = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [transcription, setTranscription] = useState("");
-  console.log("transcription is here ===> ", transcription)
+  console.log("transcription is here ===> ", transcription);
   const [InterviewData, setInterviewData] = useState<any>(null);
-  console.log("this is the Interview data ", InterviewData)
+  console.log("this is the Interview data ", InterviewData);
 
   // console.log("INTERVIEW DATA ", InterviewData?.session?.currentQuestion);
   const [questionReady, setQuestionReady] = useState<any>(null);
-  const [currentquestionIndex , setcurrentquestionIndex] = useState(0)
+  const [currentquestionIndex, setcurrentquestionIndex] = useState(0);
 
-  const totalQuestion = questionReady?.totalQuestions
+  const totalQuestion = questionReady?.totalQuestions;
 
-
-  const progressBar = ((currentquestionIndex + 1) / totalQuestion) * 100
+  const progressBar = ((currentquestionIndex + 1) / totalQuestion) * 100;
 
   // console.log("question ", questionReady?.question?.questionText);
 
-  console.log("transcription here ==> ")
+  console.log("transcription here ==> ");
 
   const userIdData = localStorage.getItem("user");
   const userId = JSON.parse(userIdData || "{}");
@@ -82,7 +81,7 @@ const Interview = () => {
   // };
 
   const speakText = (text: any) => {
-    console.log("clicked  ____")
+    console.log("clicked  ____");
     if (!("speechSynthesis" in window)) {
       alert("Speech faild !");
       return;
@@ -93,18 +92,17 @@ const Interview = () => {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
     utterance.rate = 1;
-    utterance.pitch = 1; 
+    utterance.pitch = 1;
     utterance.volume = 1;
 
-    window.speechSynthesis.speak(utterance)
+    window.speechSynthesis.speak(utterance);
   };
 
-  // speech when interview started 
+  // speech when interview started
 
   useEffect(() => {
-    speakText(questionReady?.question?.questionText)
-
-  },[questionReady])
+    speakText(questionReady?.question?.questionText);
+  }, [questionReady]);
 
   useEffect(() => {
     socketRef.current = io("http://localhost:8000", {
@@ -244,7 +242,6 @@ const Interview = () => {
     }
   }, []);
 
- 
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -321,8 +318,8 @@ const Interview = () => {
 
   const handleNextFunction = async () => {
     // Clear transcription for next question
-    if(currentquestionIndex < totalQuestion - 1) {
-      setcurrentquestionIndex(prev => prev + 1)
+    if (currentquestionIndex < totalQuestion - 1) {
+      setcurrentquestionIndex((prev) => prev + 1);
     }
     setTranscription("");
 
@@ -339,11 +336,6 @@ const Interview = () => {
       // Stop recording
       stopRecording();
 
-      // Emit end-interview event
-      socketRef.current?.emit("end-interview", {
-        sessionId: InterviewData.session.id,
-      });
-
       // Small delay to ensure event is sent
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -354,7 +346,7 @@ const Interview = () => {
     } catch (error) {
       console.error("Error ending interview:", error);
     } finally {
-      navigate("/dashboard");
+      navigate("/dashboard", {state: {sessionId: InterviewData?.session?.id}});
     }
   };
 
@@ -375,29 +367,29 @@ const Interview = () => {
 
   //fetching the api in the app for the submitting the answer and calling the api
 
-  //when we will complete the interview so we will call the complete interview api and 
-  
-  const submitAnswer = async() => {
+  //when we will complete the interview so we will call the complete interview api and
+
+  const submitAnswer = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const sessionId = InterviewData?.session?.id
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/interview/${sessionId}/answer`, {
-        answer: transcription
-      },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-    console.log("RESPONSE ", response)
-
-    }catch(err) {
-      console.error("Failed to submit answer")
-      alert("Failed to submit answer:")
-
+      const token = localStorage.getItem("token");
+      const sessionId = InterviewData?.session?.id;
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/interview/${sessionId}/answer`,
+        {
+          answer: transcription,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      console.log("RESPONSE ", response);
+    } catch (err) {
+      console.error("Failed to submit answer");
+      alert("Failed to submit answer:");
     }
-
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5">
@@ -473,7 +465,7 @@ const Interview = () => {
               <CardContent className="p-0">
                 <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/20">
                   <div className="absolute inset-0 overflow-y-auto p-6">
-                    <div className="text-primary/90 whitespace-pre-wrap">
+                    <div className="text-primary/90 whitespace-pre-wrap mt-3">
                       {transcription || (
                         <div className="flex items-center justify-center h-full text-primary/40">
                           Transcription will appear here...
@@ -482,7 +474,7 @@ const Interview = () => {
                     </div>
                   </div>
                   {isRecording && (
-                    <div className="absolute top-4 left-4">
+                    <div className="absolute top-2 left-4">
                       <Badge
                         variant="destructive"
                         className="animate-pulse-glow"
@@ -529,8 +521,9 @@ const Interview = () => {
                   <Button
                     variant="accent"
                     size="sm"
-                    onClick={() => speakText(questionReady?.question?.questionText)}
-                    
+                    onClick={() =>
+                      speakText(questionReady?.question?.questionText)
+                    }
                   >
                     <Volume2 className="h-4 w-4 mr-2" />
                     {isPlaying ? "Playing..." : "Repeat"}
@@ -569,20 +562,30 @@ const Interview = () => {
               </Button>
               <Button variant="outline" size="lg" onClick={submitAnswer}>
                 Submit Answer
-
               </Button>
 
               {/* We have to disable this button when all the question will be completed and mark as done */}
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={handleNextFunction}
-                disabled={!InterviewData?.session?.id}
-              >
-                <SkipForward className="h-5 w-5 mr-2" />
-                Next Question
-              </Button>
-             
+              {questionReady?.questionNumber ===
+              InterviewData?.session?.totalQuestions ? (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={endInterView}
+                >
+                  
+                  End Session
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleNextFunction}
+                  disabled={!InterviewData?.session?.id}
+                >
+                  <SkipForward className="h-5 w-5 mr-2" />
+                  Next Question
+                </Button>
+              )}
             </div>
             {/* <div className=" flex items-center justify-center">
               <Button variant="destructive" size="lg" onClick={endInterView}>
@@ -591,8 +594,6 @@ const Interview = () => {
               </Button>
 
             </div> */}
-
-             
           </div>
 
           {/* Real-time Feedback Sidebar */}
@@ -629,7 +630,7 @@ const Interview = () => {
               <CardContent className="pt-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Confidence Level</h3>
-                  <Badge variant="secondary">{confidence}%</Badge>
+                  <Badge variant="secondary">{confidence}...</Badge>
                 </div>
                 <Progress value={confidence} className="h-3" />
                 <div className="flex justify-between text-sm text-muted-foreground">
@@ -683,11 +684,11 @@ const Interview = () => {
               <CardContent className="pt-6 space-y-4">
                 <h3 className="font-semibold">Speech Pace</h3>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-primary mb-2">
+                  {/* <div className="text-3xl font-bold text-primary mb-2">
                     145
-                  </div>
+                  </div> */}
                   <p className="text-sm text-muted-foreground">
-                    words per minute
+                    Analizing...
                   </p>
                 </div>
                 <Badge variant="secondary" className="w-full justify-center">
